@@ -35,7 +35,7 @@ if (!curl_errno($curl)) {
     $flickr->setToken(T2F_FLICKR_TOKEN);
 
     $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
-    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, 25);
+    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, count($tumblr_photos_and_captions));
 
     foreach ($flickr_photos["photos"]["photo"] as $photo) {
         $photo_info = $flickr->photos_getInfo($photo["id"]);
