@@ -11,55 +11,65 @@ defined("T2F_FLICKR_SECRET") or die;
 defined("T2F_FLICKR_TOKEN") or die;
 defined("T2F_FLICKR_USERNAME") or die;
 
-$curl = curl_init();
-curl_setopt($curl, CURLOPT_URL, T2F_TUMBLR_API_URL);
-curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($curl, CURLOPT_BINARYTRANSFER, true);
-curl_setopt($curl, CURLOPT_FAILONERROR, true);
+define("T2F_TUMBLR_DEFAULT_LIMIT", 20);
+defined("T2F_TUMBLR_POSTS_TO_SYNC") or define("T2F_TUMBLR_POSTS_TO_SYNC", T2F_TUMBLR_DEFAULT_LIMIT);
 
-$tumblr_json = curl_exec($curl);
 
-if (!curl_errno($curl)) {
-    $tumblr_posts_by_id = array();
-    $tumblr_photo_count = 0;
+$tumblr_posts_by_id = array();
+$tumblr_photo_count = 0;
 
-    $tumblr_feed = json_decode($tumblr_json);
-    foreach (array_reverse($tumblr_feed->response->posts) as $post) {
-        if ($post->type == "photo") {
-            $tumblr_posts_by_id[$post->id] = $post;
-            $tumblr_photo_count += count($post->photos);
+for ($offset = T2F_TUMBLR_POSTS_TO_SYNC; $offset >= 0; $offset -= T2F_TUMBLR_DEFAULT_LIMIT) {
+    $url = T2F_TUMBLR_API_URL . "&offset={$offset}";
+
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_BINARYTRANSFER, true);
+    curl_setopt($curl, CURLOPT_FAILONERROR, true);
+
+    $tumblr_json = curl_exec($curl);
+
+    if (!curl_errno($curl)) {
+        foreach (array_reverse(json_decode($tumblr_json)->response->posts) as $post) {
+            if ($post->type == "photo") {
+                $tumblr_posts_by_id[$post->id] = $post;
+                $tumblr_photo_count += count($post->photos);
+            }
         }
     }
-
-    $flickr = new phpFlickr(T2F_FLICKR_API_KEY, T2F_FLICKR_SECRET, true);
-    $flickr->setToken(T2F_FLICKR_TOKEN);
-
-    $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
-    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, $tumblr_photo_count);
-
-    foreach ($flickr_photos["photos"]["photo"] as $photo) {
-        $photo_info = $flickr->photos_getInfo($photo["id"]);
-        $description = $photo_info["photo"]["description"];
-
-        unset($tumblr_posts_by_id[$description]);
+    else {
+        printf("%s\n", curl_error($curl));
     }
 
-    while (list($id, $post) = each($tumblr_posts_by_id)) {
-        $caption = html_entity_decode(strip_tags($post->caption), ENT_QUOTES | ENT_XML1, "UTF-8");
-
-        foreach ($post->photos as $photo) {
-            $url = $photo->original_size->url;
-            $name = basename($url);
-            
-            $file = sys_get_temp_dir() . "/" . $name;
-            file_put_contents($file, file_get_contents($url));
-            
-            printf("Uploading photo \"%s\" (%s) from post %s\n", $caption, $name, $id);
-            $flickr->async_upload($file, $caption, $id, null, true);
-            
-            @unlink($file);
-        }
-    }
+    curl_close($curl);
 }
 
-curl_close($curl);
+$flickr = new phpFlickr(T2F_FLICKR_API_KEY, T2F_FLICKR_SECRET, true);
+$flickr->setToken(T2F_FLICKR_TOKEN);
+
+$flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
+$flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, $tumblr_photo_count);
+
+foreach ($flickr_photos["photos"]["photo"] as $photo) {
+    $photo_info = $flickr->photos_getInfo($photo["id"]);
+    $description = $photo_info["photo"]["description"];
+
+    unset($tumblr_posts_by_id[$description]);
+}
+
+while (list($id, $post) = each($tumblr_posts_by_id)) {
+    $caption = html_entity_decode(strip_tags($post->caption), ENT_QUOTES | ENT_XML1, "UTF-8");
+
+    foreach ($post->photos as $photo) {
+        $url = $photo->original_size->url;
+        $name = basename($url);
+        
+        $file = sys_get_temp_dir() . "/" . $name;
+        file_put_contents($file, file_get_contents($url));
+        
+        printf("Uploading photo \"%s\" (%s) from post %s\n", $caption, $name, $id);
+        $flickr->async_upload($file, $caption, $id, null, true);
+        
+        @unlink($file);
+    }
+}
