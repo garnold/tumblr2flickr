@@ -12,8 +12,9 @@ defined("T2F_FLICKR_TOKEN") or die;
 defined("T2F_FLICKR_USERNAME") or die;
 
 define("T2F_TUMBLR_DEFAULT_LIMIT", 20);
-defined("T2F_TUMBLR_POSTS_TO_SYNC") or define("T2F_TUMBLR_POSTS_TO_SYNC", T2F_TUMBLR_DEFAULT_LIMIT);
+define("T2F_FLICKR_DEFAULT_LIMIT", 500);
 
+defined("T2F_TUMBLR_POSTS_TO_SYNC") or define("T2F_TUMBLR_POSTS_TO_SYNC", T2F_TUMBLR_DEFAULT_LIMIT);
 
 $tumblr_posts_by_id = array();
 $tumblr_photo_count = 0;
@@ -38,7 +39,7 @@ for ($offset = T2F_TUMBLR_POSTS_TO_SYNC; $offset >= 0; $offset -= T2F_TUMBLR_DEF
         }
     }
     else {
-        printf("%s\n", curl_error($curl));
+        printf("%s%s", curl_error($curl), PHP_EOL);
     }
 
     curl_close($curl);
@@ -48,13 +49,16 @@ $flickr = new phpFlickr(T2F_FLICKR_API_KEY, T2F_FLICKR_SECRET, true);
 $flickr->setToken(T2F_FLICKR_TOKEN);
 
 $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
-$flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, $tumblr_photo_count);
 
-foreach ($flickr_photos["photos"]["photo"] as $photo) {
-    $photo_info = $flickr->photos_getInfo($photo["id"]);
-    $description = $photo_info["photo"]["description"];
+for ($page = 1; $page <= round($tumblr_photo_count / T2F_FLICKR_DEFAULT_LIMIT); $page++) {
+    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, 500, $page);
 
-    unset($tumblr_posts_by_id[$description]);
+    foreach ($flickr_photos["photos"]["photo"] as $photo) {
+        $photo_info = $flickr->photos_getInfo($photo["id"]);
+        $description = $photo_info["photo"]["description"];
+
+        unset($tumblr_posts_by_id[$description]);
+    }
 }
 
 while (list($id, $post) = each($tumblr_posts_by_id)) {
@@ -64,11 +68,17 @@ while (list($id, $post) = each($tumblr_posts_by_id)) {
         $url = $photo->original_size->url;
         $name = basename($url);
         
+        printf("Syncing photo \"%s\" (%s) from post %s%s", $caption, $name, $id, PHP_EOL);
+
         $file = sys_get_temp_dir() . "/" . $name;
         file_put_contents($file, file_get_contents($url));
         
-        printf("Uploading photo \"%s\" (%s) from post %s\n", $caption, $name, $id);
-        $flickr->async_upload($file, $caption, $id, null, true);
+        if (filesize($file) > 0) {
+            $flickr->async_upload($file, $caption, $id, null, true);
+        }
+        else {
+            printf("File size was 0%s", PHP_EOL);
+        }
         
         @unlink($file);
     }
