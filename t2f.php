@@ -20,14 +20,14 @@ curl_setopt($curl, CURLOPT_FAILONERROR, true);
 $tumblr_json = curl_exec($curl);
 
 if (!curl_errno($curl)) {
-    $tumblr_photos_and_captions = array();
+    $tumblr_posts_by_id = array();
+    $tumblr_photo_count = 0;
 
     $tumblr_feed = json_decode($tumblr_json);
     foreach (array_reverse($tumblr_feed->response->posts) as $post) {
-        $caption = $post->caption;
-        foreach ($post->photos as $photo) {
-            $tumblr_photos_and_captions[$photo->original_size->url] =
-                empty($caption) ? null : htmlspecialchars_decode(strip_tags($caption));
+        if ($post->type == "photo") {
+            $tumblr_posts_by_id[$post->id] = $post;
+            $tumblr_photo_count += count($post->photos);
         }
     }
 
@@ -35,29 +35,30 @@ if (!curl_errno($curl)) {
     $flickr->setToken(T2F_FLICKR_TOKEN);
 
     $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
-    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, count($tumblr_photos_and_captions));
+    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, $tumblr_photo_count);
 
     foreach ($flickr_photos["photos"]["photo"] as $photo) {
         $photo_info = $flickr->photos_getInfo($photo["id"]);
         $description = $photo_info["photo"]["description"];
 
-        reset($tumblr_photos_and_captions);
-        while (list($photo, $caption) = each($tumblr_photos_and_captions)) {
-            if (strpos($description, $photo) !== false) {
-                unset($tumblr_photos_and_captions[$photo]);
-            }
-        }
+        unset($tumblr_posts_by_id[$description]);
     }
 
-    print_r($tumblr_photos_and_captions);
+    while (list($id, $post) = each($tumblr_posts_by_id)) {
+        $caption = html_entity_decode(strip_tags($post->caption), ENT_QUOTES | ENT_XML1, "UTF-8");
 
-    reset($tumblr_photos_and_captions);
-    while (list($photo, $caption) = each($tumblr_photos_and_captions)) {
-        $temp_file = tempnam(sys_get_temp_dir(), basename($photo) . ".");
-        echo "\"" . $caption . "\" (" . $photo . ") => " . $temp_file . "\n";
-        file_put_contents($temp_file, file_get_contents($photo));
-
-        $flickr->async_upload($temp_file, $caption, $photo, null, true);
+        foreach ($post->photos as $photo) {
+            $url = $photo->original_size->url;
+            $name = basename($url);
+            
+            $file = sys_get_temp_dir() . "/" . $name;
+            file_put_contents($file, file_get_contents($url));
+            
+            printf("Uploading photo \"%s\" (%s) from post %s\n", $caption, $name, $id);
+            $flickr->async_upload($file, $caption, $id, null, true);
+            
+            @unlink($file);
+        }
     }
 }
 
