@@ -50,8 +50,8 @@ $flickr->setToken(T2F_FLICKR_TOKEN);
 
 $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
 
-for ($page = 1; $page <= round($tumblr_photo_count / T2F_FLICKR_DEFAULT_LIMIT); $page++) {
-    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, 500, $page);
+for ($page = 1; $page <= ceil($tumblr_photo_count / T2F_FLICKR_DEFAULT_LIMIT); $page++) {
+    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, T2F_FLICKR_DEFAULT_LIMIT, $page);
 
     foreach ($flickr_photos["photos"]["photo"] as $photo) {
         $photo_info = $flickr->photos_getInfo($photo["id"]);
