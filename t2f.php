@@ -2,6 +2,9 @@
 
 set_include_path(get_include_path() . ":" . dirname(__FILE__) . "/phpFlickr-3.1");
 
+define("T2F_TUMBLR_API_POST_LIMIT", 20);
+define("T2F_FLICKR_API_POST_LIMIT", 500);
+
 require_once("t2f.config.php");
 require_once("phpFlickr.php");
 
@@ -11,16 +14,13 @@ defined("T2F_FLICKR_SECRET") or die;
 defined("T2F_FLICKR_TOKEN") or die;
 defined("T2F_FLICKR_USERNAME") or die;
 
-define("T2F_TUMBLR_DEFAULT_LIMIT", 20);
-define("T2F_FLICKR_DEFAULT_LIMIT", 500);
-
-defined("T2F_TUMBLR_POSTS_TO_SYNC") or define("T2F_TUMBLR_POSTS_TO_SYNC", T2F_TUMBLR_DEFAULT_LIMIT);
+defined("T2F_TUMBLR_POSTS_TO_SYNC") or define("T2F_TUMBLR_POSTS_TO_SYNC", T2F_TUMBLR_API_POST_LIMIT);
 
 $tumblr_posts_by_id = array();
 $tumblr_photo_count = 0;
 
-for ($offset = T2F_TUMBLR_POSTS_TO_SYNC; $offset >= 0; $offset -= T2F_TUMBLR_DEFAULT_LIMIT) {
-    $url = T2F_TUMBLR_API_URL . "&offset={$offset}";
+for ($offset = 0; $offset < T2F_TUMBLR_POSTS_TO_SYNC; $offset += T2F_TUMBLR_API_POST_LIMIT) {
+    $url = T2F_TUMBLR_API_URL . "&limit=" . T2F_TUMBLR_API_POST_LIMIT . "&offset={$offset}";
 
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $url);
@@ -31,7 +31,7 @@ for ($offset = T2F_TUMBLR_POSTS_TO_SYNC; $offset >= 0; $offset -= T2F_TUMBLR_DEF
     $tumblr_json = curl_exec($curl);
 
     if (!curl_errno($curl)) {
-        foreach (array_reverse(json_decode($tumblr_json)->response->posts) as $post) {
+        foreach (json_decode($tumblr_json)->response->posts as $post) {
             if ($post->type == "photo") {
                 $tumblr_posts_by_id[$post->id] = $post;
                 $tumblr_photo_count += count($post->photos);
@@ -45,13 +45,16 @@ for ($offset = T2F_TUMBLR_POSTS_TO_SYNC; $offset >= 0; $offset -= T2F_TUMBLR_DEF
     curl_close($curl);
 }
 
+$tumblr_posts_by_id = array_reverse($tumblr_posts_by_id, true);
+
 $flickr = new phpFlickr(T2F_FLICKR_API_KEY, T2F_FLICKR_SECRET, true);
 $flickr->setToken(T2F_FLICKR_TOKEN);
 
 $flickr_account = $flickr->people_findByUsername(T2F_FLICKR_USERNAME);
 
-for ($page = 1; $page <= ceil($tumblr_photo_count / T2F_FLICKR_DEFAULT_LIMIT); $page++) {
-    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, min($tumblr_photo_count, T2F_FLICKR_DEFAULT_LIMIT), $page);
+for ($page = 1; $page <= ceil($tumblr_photo_count / T2F_FLICKR_API_POST_LIMIT); $page++) {
+    $per_page = min($tumblr_photo_count, T2F_FLICKR_API_POST_LIMIT);
+    $flickr_photos = $flickr->people_getPublicPhotos($flickr_account["id"], null, null, $per_page, $page);
 
     foreach ($flickr_photos["photos"]["photo"] as $photo) {
         $photo_info = $flickr->photos_getInfo($photo["id"]);
@@ -73,7 +76,7 @@ while (list($id, $post) = each($tumblr_posts_by_id)) {
         $file = sys_get_temp_dir() . "/" . $name;
         file_put_contents($file, file_get_contents($url));
         
-        if (filesize($file) > 0) {
+        if (is_readable($file) && filesize($file) > 0) {
             $flickr->async_upload($file, $caption, $id, null, true);
         }
         else {
