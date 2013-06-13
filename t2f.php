@@ -65,7 +65,7 @@ for ($page = 1; $page <= ceil($tumblr_photo_count / T2F_FLICKR_API_POST_LIMIT); 
 }
 
 while (list($id, $post) = each($tumblr_posts_by_id)) {
-    $caption = html_entity_decode(strip_tags($post->caption), ENT_QUOTES | ENT_XML1, "UTF-8");
+    $caption = html_entity_decode(strip_tags($post->caption), ENT_QUOTES, "UTF-8");
 
     foreach ($post->photos as $photo) {
         $url = $photo->original_size->url;
